@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Fuo File Downloader</title>
+    <style>
+         :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #ffffff;
+            --text: #1f2937;
+            --text-light: #6b7280;
+            --border: #e5e7eb;
+            --success-bg: #ecfdf5;
+            --success-text: #065f46;
+            --error-bg: #fef2f2;
+            --error-text: #991b1b;
+            --info-bg: #eff6ff;
+            --info-text: #1e40af;
+        }
+        
+        body {
+            width: 360px;
+            padding: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            background-color: #f9fafb;
+            color: var(--text);
+        }
+        
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        
+        .header span {
+            font-size: 20px;
+        }
+        
+        .card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border);
+        }
+        
+        .section {
+            margin-bottom: 16px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text-light);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+        
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        button:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            background-color: #d1d5db;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #scanBtn {
+            background-color: #10b981;
+        }
+        
+        #scanBtn:hover {
+            background-color: #059669;
+        }
+        
+        #status {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+            display: none;
+            font-weight: 500;
+        }
+        
+        #status.success {
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            border: 1px solid #a7f3d0;
+            display: block;
+        }
+        
+        #status.error {
+            background-color: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid #fecaca;
+            display: block;
+        }
+        
+        #status.info {
+            background-color: var(--info-bg);
+            color: var(--info-text);
+            border: 1px solid #bfdbfe;
+            display: block;
+        }
+        
+        .file-list {
+            max-height: 160px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px;
+            margin-top: 12px;
+            display: none;
+            background-color: #f9fafb;
+        }
+        
+        .file-item {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-light);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .footer {
+            margin-top: 16px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-light);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <span>📦</span>
+        <h2>Fuo File Downloader</h2>
+    </div>
+
+    <div class="card">
+        <div class="section">
+            <button id="scanBtn">🔍 Scan for Files</button>
+        </div>
+
+        <div id="imageList" class="file-list"></div>
+
+        <div class="section" style="margin-top: 16px; margin-bottom: 0;">
+            <button id="downloadBtn" disabled>📥 Download as ZIP</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <div class="footer">
+        v1.1 • Powered by JSZip
+    </div>
+
+    <script src="jszip.min.js"></script>
+    <script src="popup.js"></script>
+</body>
+
+</html>
