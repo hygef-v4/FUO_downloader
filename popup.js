@@ -24,9 +24,72 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             const result = results[0].result;
-            fileList = result.files; // Now contains objects {url, originalName}
-            fileList.xfToken = result.xfToken; // Store token for later use
-            fileList.requestUri = result.requestUri;
+
+            // Handle Forum Page (Multiple Threads)
+            if (result.type === 'forum') {
+                console.log('Detected Forum Page:', result);
+                console.log('Number of threads found:', result.threads ? result.threads.length : 0);
+
+                const threads = result.threads;
+                if (!threads || threads.length === 0) {
+                    showStatus('No threads found. Check selectors.', 'error');
+                    downloadBtn.disabled = true;
+                    return;
+                }
+
+                console.log('Starting to scan threads...');
+                showStatus(`Found ${threads.length} threads. Scanning contents...`, 'info');
+                fileList = []; // Reset global list
+                fileList.xfToken = result.xfToken;
+                fileList.requestUri = result.requestUri;
+
+                // Process threads sequentially to be polite and avoid flooding
+                for (let i = 0; i < threads.length; i++) {
+                    const thread = threads[i];
+                    showStatus(`Scanning thread ${i + 1}/${threads.length}: ${thread.title}...`, 'info');
+
+                    try {
+                        const response = await fetch(thread.url);
+                        if (!response.ok) continue;
+                        const text = await response.text();
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(text, 'text/html');
+
+                        const threadFiles = await scanDocument(doc, thread.url, result.xfToken);
+
+                        console.log(`Thread "${thread.title}": Found ${threadFiles.length} files`);
+
+                        // Add folder info (Thread Title) to each file
+                        threadFiles.forEach(f => {
+                            f.folder = thread.title.replace(/[<>:"\/\\|?*]/g, "").trim();
+                        });
+
+                        fileList.push(...threadFiles);
+
+                        // Increased delay to avoid rate limiting and ensure all async operations complete
+                        await new Promise(r => setTimeout(r, 500));
+
+                    } catch (err) {
+                        console.error('Error scanning thread:', thread.url, err);
+                    }
+                }
+
+                // Check final count
+                if (fileList.length === 0) {
+                    showStatus('No files found in any of the threads.', 'error');
+                } else {
+                    // Dedup by URL just in case
+                    const uniqueMap = new Map();
+                    fileList.forEach(f => uniqueMap.set(f.url, f));
+                    fileList = Array.from(uniqueMap.values());
+                }
+
+            } else {
+                // Single Page (Thread or Media)
+                fileList = result.files;
+                fileList.xfToken = result.xfToken;
+                fileList.requestUri = result.requestUri;
+            }
 
             // Sort files by "q" number (q1, q2, q3...) if present in the filename
             fileList.sort((a, b) => {
@@ -70,13 +133,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 showStatus('No files found in attachment list', 'error');
                 downloadBtn.disabled = true;
             } else {
-                showStatus(`Found ${fileList.length} file(s)`, 'success');
+                showStatus(`Found ${fileList.length} files total`, 'success');
                 downloadBtn.disabled = false;
 
-                // Display file list
-                fileListDiv.innerHTML = fileList.map((file, index) =>
-                    `<div class="file-item">${index + 1}. ${getFileName(file, index)}</div>`
+                // Display file list (Truncated if too long)
+                const displayMax = 100;
+                const listHtml = fileList.slice(0, displayMax).map((file, index) =>
+                    `<div class="file-item">${index + 1}. [${file.folder || 'Root'}] ${getFileName(file, index)}</div>`
                 ).join('');
+
+                fileListDiv.innerHTML = listHtml + (fileList.length > displayMax ? `<div class="file-item">...and ${fileList.length - displayMax} more</div>` : '');
                 fileListDiv.style.display = 'block';
             }
         } catch (error) {
@@ -130,46 +196,42 @@ document.addEventListener('DOMContentLoaded', function () {
                         // --- Try to fetch comments if ID is present and not already fetched ---
                         if (fileObj.id && !fileObj.content) {
                             try {
-                                // Construct API URL carefully using the parameters that allow access
-                                // Base URL: https://fuoverflow.com/media/[id]/?...
-                                // We need _xfToken which we extracted earlier
-
-                                // Use the sidebar href if available as base, otherwise construct standard media URL
                                 let baseUrl = fileObj.mediaUrl || `https://fuoverflow.com/media/${fileObj.id}/`;
 
-                                // Construct query params
                                 const params = new URLSearchParams();
                                 params.append('lightbox', '1');
-                                params.append('lightbox', 'true'); // cURL had both, mirroring it
+                                params.append('lightbox', 'true');
                                 params.append('_xfResponseType', 'json');
                                 params.append('_xfWithData', '1');
 
                                 if (fileList.xfToken) {
                                     params.append('_xfToken', fileList.xfToken);
                                 }
-
-                                // Add current page URI to likely satisfy validation
                                 if (fileList.requestUri) {
                                     params.append('_xfRequestUri', fileList.requestUri);
                                 }
 
                                 const commentApiUrl = `${baseUrl}?${params.toString()}`;
-
                                 const commentResp = await fetch(commentApiUrl);
+
                                 if (commentResp.ok) {
                                     const data = await commentResp.json();
                                     if (data.html && data.html.content) {
                                         const commentText = parseComments(data.html.content, fileObj.id, fileObj.url);
                                         if (commentText) {
-                                            // Create a text file for comments
-                                            // Determine filename for text
+                                            // Determine filename for text (matches the image filename)
                                             let textFilename = filename;
                                             const lastDot = textFilename.lastIndexOf('.');
                                             if (lastDot > 0) textFilename = textFilename.substring(0, lastDot);
                                             textFilename += '_comments.txt';
 
-                                            // Add to zip
-                                            zip.file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
+                                            // CRITICAL FIX: Add comment to the same folder as the image
+                                            if (fileObj.folder) {
+                                                zip.folder(fileObj.folder).file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
+                                            } else {
+                                                zip.file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
+                                            }
+                                            console.log(`✓ Added comment for ${filename} in folder ${fileObj.folder || 'root'}`);
                                         }
                                     }
                                 }
@@ -179,10 +241,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         }
                     }
 
-                    zip.file(filename, blob);
+                    // Add image/file to ZIP (already handles folders)
+                    if (fileObj.folder) {
+                        zip.folder(fileObj.folder).file(filename, blob);
+                    } else {
+                        zip.file(filename, blob);
+                    }
                     successCount++;
                 } catch (error) {
-                    console.error('Fetch error:', error);
+                    console.error('Fetch error for file:', fileList[i].url, error);
                 }
             }
 
@@ -221,12 +288,147 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+// Helper: Scan a document object (fetched via fetch) for files
+// This duplicates the logic of extractFilesAndTitle but for a Document object
+async function scanDocument(doc, url, xfToken) {
+    const files = [];
+    const uniqueUrls = new Set();
+    const isMediaPage = url.includes('/media/');
+
+    // Helper to parse comments from fetched HTML
+    function parseCommentsFromHTML(htmlContent, mediaId) {
+        try {
+            const parser = new DOMParser();
+            const tempDoc = parser.parseFromString(htmlContent, 'text/html');
+            const comments = tempDoc.querySelectorAll('.comment, .message--comment');
+
+            if (comments.length === 0) return null;
+
+            let commentText = `Media ID: ${mediaId}\n`;
+            commentText += `Extracted At: ${new Date().toLocaleString()}\n`;
+            commentText += `Total Comments: ${comments.length}\n`;
+            commentText += '================================================\n\n';
+
+            comments.forEach((comment, index) => {
+                const author = comment.dataset.author || 'Unknown';
+                const contentId = comment.dataset.content || 'N/A';
+                const timeEl = comment.querySelector('time');
+                const time = timeEl ? (timeEl.getAttribute('title') || timeEl.textContent) : 'Unknown Time';
+
+                const bbWrapper = comment.querySelector('.bbWrapper');
+                const body = bbWrapper ? bbWrapper.innerText.trim() : '[No Content]';
+
+                commentText += `#${index + 1} | User: ${author} | Date: ${time}\n`;
+                commentText += `ID: ${contentId}\n`;
+                commentText += `Content:\n${body}\n`;
+                commentText += '------------------------------------------------\n';
+            });
+
+            return commentText;
+        } catch (e) {
+            console.error('Error parsing comments:', e);
+            return null;
+        }
+    }
+
+    // --- Standard Logic (Mixed with Media Logic) ---
+    const attachmentItems = doc.querySelectorAll('.attachmentList .file--linked');
+
+    if (attachmentItems.length > 0) {
+        for (const li of attachmentItems) {
+            const link = li.querySelector('a[href*="/attachments/"]');
+            if (!link) continue;
+
+            // Resolve relative URLs
+            const href = link.getAttribute('href');
+            const resolvedHref = new URL(href, url).href;
+
+            if (uniqueUrls.has(resolvedHref)) continue;
+            uniqueUrls.add(resolvedHref);
+
+            let name = '';
+            const nameElement = li.querySelector('.file-name');
+            if (nameElement) {
+                name = nameElement.textContent.trim() || nameElement.getAttribute('title');
+            }
+
+            let extractedId = null;
+            let mediaUrl = null;
+
+            const sidebarHref = link.getAttribute('data-lb-sidebar-href');
+            if (sidebarHref) {
+                let cleanHref = sidebarHref.split('?')[0];
+                const baseUrlObj = new URL(url);
+
+                if (cleanHref.startsWith('/')) {
+                    mediaUrl = baseUrlObj.origin + cleanHref;
+                } else if (cleanHref.startsWith('http')) {
+                    mediaUrl = cleanHref;
+                } else {
+                    mediaUrl = new URL(cleanHref, url).href;
+                }
+
+                const mediaMatch = sidebarHref.match(/\/media\/.*?\.(\d+)(\/|\?|$)/);
+                if (mediaMatch) extractedId = mediaMatch[1];
+            }
+
+            if (!extractedId) {
+                const match = resolvedHref.match(/\.(\d+)\/?$/);
+                if (match) extractedId = match[1];
+                else {
+                    const match2 = resolvedHref.match(/\/attachments\/(\d+)\/?/);
+                    if (match2) extractedId = match2[1];
+                }
+            }
+
+            // Store the file index before adding
+            const fileIndex = files.length;
+
+            files.push({
+                url: resolvedHref,
+                id: extractedId,
+                mediaUrl: mediaUrl,
+                originalName: name
+            });
+
+            console.log(`File ${fileIndex + 1}: name="${name}", id="${extractedId}", mediaUrl="${mediaUrl}"`);
+        }
+    }
+
+    // Fallback attachments
+    if (!isMediaPage) {
+        doc.querySelectorAll('a[href*="/attachments/"]').forEach(a => {
+            const href = a.getAttribute('href');
+            const resolvedHref = new URL(href, url).href;
+
+            if (!uniqueUrls.has(resolvedHref)) {
+                uniqueUrls.add(resolvedHref);
+                if (files.some(f => f.url === resolvedHref)) return;
+
+                let extractedId = null;
+                const match = resolvedHref.match(/\.(\d+)\/?$/);
+                if (match) extractedId = match[1];
+
+                files.push({
+                    url: resolvedHref,
+                    id: extractedId,
+                    originalName: ''
+                });
+            }
+        });
+    }
+
+    return files;
+}
+
 // Helper: Parse comments from HTML string (Moved to global scope for Popup use)
+// This effectively largely duplicates the logic inside extractFilesAndTitle -> parseCommentsLocal
+// But resides here for use by the "Active Tab" (via the injected script result) AND the "Background Fetch" (via popup.js)
 function parseComments(htmlContent, mediaId, sourceUrl) {
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlContent, 'text/html');
-        // Check if we are blocked or no permission (often login form)
+        // Check if we are blocked or no permission
         if (doc.querySelector('form.login')) return null;
 
         const comments = doc.querySelectorAll('.comment, .message--comment');
@@ -260,6 +462,8 @@ function parseComments(htmlContent, mediaId, sourceUrl) {
         return null;
     }
 }
+
+
 
 // Function to extract files and title from the page
 async function extractFilesAndTitle() {
@@ -296,6 +500,61 @@ async function extractFilesAndTitle() {
         });
 
         return commentText;
+    }
+
+    // Check if it's a forum page (listing of threads)
+    // Must have BOTH: /forums/ in URL AND thread list items present
+    // This prevents false detection on individual thread pages
+    const isForumPage = window.location.href.includes('/forums/') &&
+        !!document.querySelector('.structItem--thread');
+
+    console.log('FuoDownloader: Current URL:', window.location.href);
+    console.log('FuoDownloader: isForumPage:', isForumPage);
+
+    if (isForumPage) {
+        // --- Logic for Forum Page (List of Threads) ---
+        const threads = [];
+
+        // Select thread links (adjust selectors based on Fuo structure)
+        // Priority: data-tp-primary (standard XF2) -> href contains /threads/ -> fallbacks
+        const threadLinks = document.querySelectorAll(
+            '.structItem-title a[data-tp-primary="on"], ' +
+            '.structItem-title a[href*="/threads/"]:not(.labelLink), ' +
+            '.structItem--thread .structItem-title > a:last-child'
+        );
+
+        const uniqueThreadUrls = new Set();
+
+        threadLinks.forEach(link => {
+            const href = link.href;
+            if (!uniqueThreadUrls.has(href)) {
+                uniqueThreadUrls.add(href);
+                threads.push({
+                    url: href,
+                    title: link.textContent.trim()
+                });
+            }
+        });
+
+        // Extract Title
+        let forumTitle = '';
+        const titleEl = document.querySelector('h1.p-title-value');
+        if (titleEl) forumTitle = titleEl.textContent.trim();
+        else forumTitle = document.title.split('|')[0].trim();
+
+        // Extract Token
+        let xfToken = '';
+        const tokenInput = document.querySelector('input[name="_xfToken"]');
+        if (tokenInput) xfToken = tokenInput.value;
+        else xfToken = document.documentElement.getAttribute('data-csrf') || '';
+
+        return {
+            type: 'forum',
+            title: forumTitle,
+            threads: threads,
+            xfToken: xfToken,
+            requestUri: window.location.pathname + window.location.search
+        };
     }
 
     if (isMediaPage) {
@@ -478,12 +737,15 @@ async function extractFilesAndTitle() {
     }
 
     return {
+        type: 'standard',
         files: files,
         title: pageTitle || 'downloaded-files',
         xfToken: xfToken,
         requestUri: window.location.pathname + window.location.search
     };
 }
+
+
 
 function getFileName(fileObj, index) {
     try {
