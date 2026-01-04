@@ -1,13 +1,13 @@
 let fileList = [];
 let currentTitle = 'downloaded-files';
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const scanBtn = document.getElementById('scanBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const statusDiv = document.getElementById('status');
     const fileListDiv = document.getElementById('imageList');
 
-    scanBtn.addEventListener('click', async function() {
+    scanBtn.addEventListener('click', async function () {
         showStatus('Scanning for files...', 'info');
         scanBtn.disabled = true;
         downloadBtn.disabled = true;
@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const result = results[0].result;
             fileList = result.files; // Now contains objects {url, originalName}
+            fileList.xfToken = result.xfToken; // Store token for later use
+            fileList.requestUri = result.requestUri;
 
             // Sort files by "q" number (q1, q2, q3...) if present in the filename
             fileList.sort((a, b) => {
@@ -84,9 +86,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    downloadBtn.addEventListener('click', async function() {
+    downloadBtn.addEventListener('click', async function () {
         let folderName = currentTitle.trim() || 'downloaded-files';
-        
+
         // Sanitize filename again to be safe
         folderName = folderName.replace(/[<>:"\/\\|?*]/g, "").trim();
         if (!folderName) folderName = 'downloaded-files';
@@ -113,11 +115,69 @@ document.addEventListener('DOMContentLoaded', function() {
                     const fileObj = fileList[i];
                     const filename = getFileName(fileObj, i);
 
-                    showStatus(`Fetching file ${i + 1}/${fileList.length}...`, 'info');
+                    showStatus(`Processing file ${i + 1}/${fileList.length}...`, 'info');
 
-                    const response = await fetch(fileObj.url);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    const blob = await response.blob();
+                    let blob;
+                    if (fileObj.content) {
+                        // Handle text content (already available)
+                        blob = new Blob([fileObj.content], { type: 'text/plain;charset=utf-8' });
+                    } else {
+                        // Handle URL download
+                        const response = await fetch(fileObj.url);
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        blob = await response.blob();
+
+                        // --- Try to fetch comments if ID is present and not already fetched ---
+                        if (fileObj.id && !fileObj.content) {
+                            try {
+                                // Construct API URL carefully using the parameters that allow access
+                                // Base URL: https://fuoverflow.com/media/[id]/?...
+                                // We need _xfToken which we extracted earlier
+
+                                // Use the sidebar href if available as base, otherwise construct standard media URL
+                                let baseUrl = fileObj.mediaUrl || `https://fuoverflow.com/media/${fileObj.id}/`;
+
+                                // Construct query params
+                                const params = new URLSearchParams();
+                                params.append('lightbox', '1');
+                                params.append('lightbox', 'true'); // cURL had both, mirroring it
+                                params.append('_xfResponseType', 'json');
+                                params.append('_xfWithData', '1');
+
+                                if (fileList.xfToken) {
+                                    params.append('_xfToken', fileList.xfToken);
+                                }
+
+                                // Add current page URI to likely satisfy validation
+                                if (fileList.requestUri) {
+                                    params.append('_xfRequestUri', fileList.requestUri);
+                                }
+
+                                const commentApiUrl = `${baseUrl}?${params.toString()}`;
+
+                                const commentResp = await fetch(commentApiUrl);
+                                if (commentResp.ok) {
+                                    const data = await commentResp.json();
+                                    if (data.html && data.html.content) {
+                                        const commentText = parseComments(data.html.content, fileObj.id, fileObj.url);
+                                        if (commentText) {
+                                            // Create a text file for comments
+                                            // Determine filename for text
+                                            let textFilename = filename;
+                                            const lastDot = textFilename.lastIndexOf('.');
+                                            if (lastDot > 0) textFilename = textFilename.substring(0, lastDot);
+                                            textFilename += '_comments.txt';
+
+                                            // Add to zip
+                                            zip.file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
+                                        }
+                                    }
+                                }
+                            } catch (err) {
+                                console.log('No comments found or error for ID:', fileObj.id, err);
+                            }
+                        }
+                    }
 
                     zip.file(filename, blob);
                     successCount++;
@@ -135,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: "blob"
             });
             const zipUrl = URL.createObjectURL(content);
-            
+
             // Use a subfolder to ensure filename is respected and avoid conflicts
             const zipFilename = `Fuo_Downloads/${folderName}.zip`;
 
@@ -161,13 +221,143 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Helper: Parse comments from HTML string (Moved to global scope for Popup use)
+function parseComments(htmlContent, mediaId, sourceUrl) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        // Check if we are blocked or no permission (often login form)
+        if (doc.querySelector('form.login')) return null;
+
+        const comments = doc.querySelectorAll('.comment, .message--comment');
+        if (comments.length === 0) return null;
+
+        let commentText = `Media ID: ${mediaId}\n`;
+        if (sourceUrl) commentText += `Source: ${sourceUrl}\n`;
+        commentText += `Extracted At: ${new Date().toLocaleString()}\n`;
+        commentText += `Total Comments: ${comments.length}\n`;
+        commentText += '================================================\n\n';
+
+        comments.forEach((comment, index) => {
+            const author = comment.dataset.author || 'Unknown';
+            const contentId = comment.dataset.content || 'N/A';
+            const timeEl = comment.querySelector('time');
+            const time = timeEl ? (timeEl.getAttribute('title') || timeEl.textContent) : 'Unknown Time';
+
+            // Extract text from bbWrapper
+            const bbWrapper = comment.querySelector('.bbWrapper');
+            const body = bbWrapper ? bbWrapper.innerText.trim() : '[No Content]';
+
+            commentText += `#${index + 1} | User: ${author} | Date: ${time}\n`;
+            commentText += `ID: ${contentId}\n`;
+            commentText += `Content:\n${body}\n`;
+            commentText += '------------------------------------------------\n';
+        });
+
+        return commentText;
+    } catch (e) {
+        console.error('Error parsing comments:', e);
+        return null;
+    }
+}
+
 // Function to extract files and title from the page
-function extractFilesAndTitle() {
+async function extractFilesAndTitle() {
     const files = [];
     const uniqueUrls = new Set();
+    const isMediaPage = window.location.href.includes('/media/');
 
-    // Target specifically the attachment list to avoid extra files
-    // and capture both images and other files (zip, rar, etc.)
+    // Helper: Parse comments from HTML string - We can't use the Global one directly in executeScript unless injected, 
+    // so we keep a simple version here or rely on the fact parsing happens in Popup for threaded view.
+    // However, for the 'Single Media Page' flow, we need it here.
+    function parseCommentsLocal(htmlContent, mediaId) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        const comments = doc.querySelectorAll('.comment, .message--comment');
+        let commentText = `Media ID: ${mediaId}\n`;
+        commentText += `Source: ${window.location.href}\n`;
+        commentText += `Extracted At: ${new Date().toLocaleString()}\n`;
+        commentText += `Total Comments: ${comments.length}\n`;
+        commentText += '================================================\n\n';
+
+        comments.forEach((comment, index) => {
+            const author = comment.dataset.author || 'Unknown';
+            const contentId = comment.dataset.content || 'N/A';
+            const timeEl = comment.querySelector('time');
+            const time = timeEl ? (timeEl.getAttribute('title') || timeEl.textContent) : 'Unknown Time';
+
+            const bbWrapper = comment.querySelector('.bbWrapper');
+            const body = bbWrapper ? bbWrapper.innerText.trim() : '[No Content]';
+
+            commentText += `#${index + 1} | User: ${author} | Date: ${time}\n`;
+            commentText += `ID: ${contentId}\n`;
+            commentText += `Content:\n${body}\n`;
+            commentText += '------------------------------------------------\n';
+        });
+
+        return commentText;
+    }
+
+    if (isMediaPage) {
+        // --- Logic for Media Page (Image + Comments) ---
+        try {
+            // 1. Identify Media ID and Basic Info
+            const urlParts = window.location.pathname.split('.');
+            let mediaId = 'unknown';
+            if (urlParts.length > 1) {
+                const lastPart = urlParts[urlParts.length - 1].replace('/', '');
+                if (/^\d+$/.test(lastPart)) {
+                    mediaId = lastPart;
+                }
+            }
+
+            // 2. Find the Main Image
+            let imageUrl = '';
+            const ogImage = document.querySelector('meta[property="og:image"]');
+            if (ogImage) {
+                imageUrl = ogImage.content;
+            } else {
+                const img = document.querySelector('.xfmgImage img, .media-container img');
+                if (img) imageUrl = img.src;
+            }
+
+            if (imageUrl) {
+                let title = document.title.split(' | ')[0].trim();
+                files.push({
+                    url: imageUrl,
+                    id: mediaId,
+                    originalName: `${title}_${mediaId}.jpg`
+                });
+            }
+
+            // 3. Fetch Comments
+            const apiUrl = window.location.href + (window.location.search ? '&' : '?') + '_xfResponseType=json&_xfWithData=1';
+
+            try {
+                const response = await fetch(apiUrl);
+                const json = await response.json();
+
+                if (json.html && json.html.content) {
+                    const commentContent = parseCommentsLocal(json.html.content, mediaId);
+
+                    files.push({
+                        content: commentContent,
+                        originalName: `${mediaId}_comments.txt`,
+                        type: 'text'
+                    });
+                }
+            } catch (err) {
+                console.error('Error fetching comments:', err);
+            }
+
+        } catch (e) {
+            console.error('Error in media extraction:', e);
+        }
+    }
+
+    // --- Standard Logic (Mixed with Media Logic to catch attachments too) ---
+
+    // Target specifically the attachment list
     const attachmentItems = document.querySelectorAll('.attachmentList .file--linked');
 
     if (attachmentItems.length > 0) {
@@ -179,6 +369,9 @@ function extractFilesAndTitle() {
             if (uniqueUrls.has(href)) return;
             uniqueUrls.add(href);
 
+            // Check if we already added this URL
+            if (files.some(f => f.url === href)) return;
+
             // Try to get the real filename from the UI
             let name = '';
             const nameElement = li.querySelector('.file-name');
@@ -186,19 +379,64 @@ function extractFilesAndTitle() {
                 name = nameElement.textContent.trim() || nameElement.getAttribute('title');
             }
 
+            // Extract ID from URL for potential media lookup
+            // Priority: data-lb-sidebar-href (Media ID) > href (Attachment ID)
+            let extractedId = null;
+            let mediaUrl = null;
+
+            // Check for Media ID in data-lb-sidebar-href
+            // Format: /media/name.35858/?lightbox=1
+            const sidebarHref = link.getAttribute('data-lb-sidebar-href');
+            if (sidebarHref) {
+                // Get clean Media URL (absolute)
+                let cleanHref = sidebarHref.split('?')[0];
+                if (cleanHref.startsWith('/')) {
+                    mediaUrl = window.location.origin + cleanHref;
+                } else if (cleanHref.startsWith('http')) {
+                    mediaUrl = cleanHref;
+                }
+
+                // Extract ID
+                const mediaMatch = sidebarHref.match(/\/media\/.*?\.(\d+)(\/|\?|$)/);
+                if (mediaMatch) {
+                    extractedId = mediaMatch[1];
+                }
+            }
+
+            // Fallback to Attachment ID if Media ID not found (though less useful for comments)
+            if (!extractedId) {
+                const match = href.match(/\.(\d+)\/?$/);
+                if (match) {
+                    extractedId = match[1];
+                } else {
+                    // Try alternate pattern /attachments/id/
+                    const match2 = href.match(/\/attachments\/(\d+)\/?/);
+                    if (match2) extractedId = match2[1];
+                }
+            }
+
             files.push({
                 url: href,
+                id: extractedId,
+                mediaUrl: mediaUrl,
                 originalName: name
             });
         });
-    } else {
-        // Fallback for pages that might not have the standard structure
+    } else if (!isMediaPage) {
+        // Fallback
         document.querySelectorAll('a[href*="/attachments/"]').forEach(a => {
             const href = a.href;
             if (!uniqueUrls.has(href)) {
                 uniqueUrls.add(href);
+                if (files.some(f => f.url === href)) return;
+
+                let extractedId = null;
+                const match = href.match(/\.(\d+)\/?$/);
+                if (match) extractedId = match[1];
+
                 files.push({
                     url: href,
+                    id: extractedId,
                     originalName: ''
                 });
             }
@@ -229,9 +467,21 @@ function extractFilesAndTitle() {
         .trim()
         .substring(0, 100); // Limit length
 
+    // Extract _xfToken
+    let xfToken = '';
+    const tokenInput = document.querySelector('input[name="_xfToken"]');
+    if (tokenInput) {
+        xfToken = tokenInput.value;
+    } else {
+        // Try global html attribute (XF2 style)
+        xfToken = document.documentElement.getAttribute('data-csrf') || '';
+    }
+
     return {
         files: files,
-        title: pageTitle || 'downloaded-files'
+        title: pageTitle || 'downloaded-files',
+        xfToken: xfToken,
+        requestUri: window.location.pathname + window.location.search
     };
 }
 
@@ -239,10 +489,10 @@ function getFileName(fileObj, index) {
     try {
         let filename = '';
 
-        // Use original name if available (extracted from DOM)
+        // Use original name if available
         if (fileObj.originalName) {
             filename = fileObj.originalName;
-        } else {
+        } else if (fileObj.url) {
             // Fallback to URL parsing
             const urlObj = new URL(fileObj.url);
             let pathname = urlObj.pathname;
@@ -253,6 +503,10 @@ function getFileName(fileObj, index) {
             if (/^\d+$/.test(filename) && pathParts.length > 1) {
                 filename = pathParts[pathParts.length - 2];
             }
+        } else {
+            // Default based on type
+            filename = `file_${String(index + 1).padStart(3, '0')}`;
+            if (fileObj.type === 'text') filename += '.txt';
         }
 
         // Clean up filename but keep extension
@@ -269,6 +523,7 @@ function getFileName(fileObj, index) {
             if (filename.includes('-webp')) extension = '.webp';
             else if (filename.includes('-jpg')) extension = '.jpg';
             else if (filename.includes('-png')) extension = '.png';
+            else if (fileObj.type === 'text') extension = '.txt';
             else extension = '.jpg'; // Default
         }
 
@@ -276,6 +531,13 @@ function getFileName(fileObj, index) {
         namePart = namePart.replace(/[^a-zA-Z0-9_-]/g, '_');
 
         // Add index to ensure uniqueness and correct order
+        // return `${String(index + 1).padStart(3, '0')}_${namePart}${extension}`;
+
+        // If the original name was specifically set (like comments), preserve it nicely
+        if (fileObj.originalName && fileObj.originalName.includes('_comments')) {
+            return `${namePart}${extension}`;
+        }
+
         return `${String(index + 1).padStart(3, '0')}_${namePart}${extension}`;
     } catch (error) {
         return `file_${String(index + 1).padStart(3, '0')}.dat`;
