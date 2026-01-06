@@ -1,13 +1,13 @@
 let fileList = [];
 let currentTitle = 'downloaded-files';
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
     const scanBtn = document.getElementById('scanBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const statusDiv = document.getElementById('status');
     const fileListDiv = document.getElementById('imageList');
 
-    scanBtn.addEventListener('click', async function () {
+    scanBtn.addEventListener('click', async function() {
         showStatus('Scanning for files...', 'info');
         scanBtn.disabled = true;
         downloadBtn.disabled = true;
@@ -89,6 +89,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 fileList = result.files;
                 fileList.xfToken = result.xfToken;
                 fileList.requestUri = result.requestUri;
+
+                if (tab.url.includes("/threads/") && result.title) {
+                    const safeFolder = result.title.replace(/[<>:"\/\\|?*]/g, "").trim();
+
+                    fileList.forEach((f) => {
+                        f.folder = safeFolder;
+                    });
+                }
             }
 
             // Sort files by "q" number (q1, q2, q3...) if present in the filename
@@ -152,7 +160,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    downloadBtn.addEventListener('click', async function () {
+    downloadBtn.addEventListener('click', async function() {
         let folderName = currentTitle.trim() || 'downloaded-files';
 
         // Sanitize filename again to be safe
