@@ -49,7 +49,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     showStatus(`Scanning thread ${i + 1}/${threads.length}: ${thread.title}...`, 'info');
 
                     try {
-                        const response = await fetch(thread.url);
+                        const response = await fetch(thread.url, {
+                            credentials: 'include'
+                        });
+
                         if (!response.ok) continue;
                         const text = await response.text();
                         const parser = new DOMParser();
@@ -57,11 +60,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
                         const threadFiles = await scanDocument(doc, thread.url, result.xfToken);
 
-                        console.log(`Thread "${thread.title}": Found ${threadFiles.length} files`);
+                        // ⭐ ADD: gán requestUri cho từng file
+                        const threadUrlObj = new URL(thread.url);
+                        const threadRequestUri = threadUrlObj.pathname + threadUrlObj.search;
 
                         // Add folder info (Thread Title) to each file
                         threadFiles.forEach(f => {
                             f.folder = thread.title.replace(/[<>:"\/\\|?*]/g, "").trim();
+                            f.requestUri = threadRequestUri; // ⭐ CRITICAL FIX
                         });
 
                         fileList.push(...threadFiles);
@@ -197,56 +203,70 @@ document.addEventListener('DOMContentLoaded', function() {
                         blob = new Blob([fileObj.content], { type: 'text/plain;charset=utf-8' });
                     } else {
                         // Handle URL download
-                        const response = await fetch(fileObj.url);
+                        const response = await fetch(fileObj.url, {
+                            credentials: 'include'
+                        });
+
                         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                         blob = await response.blob();
 
-                        // --- Try to fetch comments if ID is present and not already fetched ---
-                        if (fileObj.id && !fileObj.content) {
+                        // ✅ FETCH MEDIA PAGE THẬT ĐỂ LẤY COMMENT (THAY TOÀN BỘ LIGHTBOX API)
+                        if (fileObj.mediaUrl && fileObj.id && !fileObj.content) {
                             try {
-                                let baseUrl = fileObj.mediaUrl || `https://fuoverflow.com/media/${fileObj.id}/`;
+                                const mediaPageResp = await fetch(fileObj.mediaUrl, {
+                                    credentials: 'include'
+                                });
 
-                                const params = new URLSearchParams();
-                                params.append('lightbox', '1');
-                                params.append('lightbox', 'true');
-                                params.append('_xfResponseType', 'json');
-                                params.append('_xfWithData', '1');
-
-                                if (fileList.xfToken) {
-                                    params.append('_xfToken', fileList.xfToken);
-                                }
-                                if (fileList.requestUri) {
-                                    params.append('_xfRequestUri', fileList.requestUri);
+                                if (!mediaPageResp.ok) {
+                                    console.warn('Media page fetch failed:', fileObj.mediaUrl);
+                                    return;
                                 }
 
-                                const commentApiUrl = `${baseUrl}?${params.toString()}`;
-                                const commentResp = await fetch(commentApiUrl);
+                                const mediaHtml = await mediaPageResp.text();
 
-                                if (commentResp.ok) {
-                                    const data = await commentResp.json();
-                                    if (data.html && data.html.content) {
-                                        const commentText = parseComments(data.html.content, fileObj.id, fileObj.url);
-                                        if (commentText) {
-                                            // Determine filename for text (matches the image filename)
-                                            let textFilename = filename;
-                                            const lastDot = textFilename.lastIndexOf('.');
-                                            if (lastDot > 0) textFilename = textFilename.substring(0, lastDot);
-                                            textFilename += '_comments.txt';
+                                const commentText = parseComments(
+                                    mediaHtml,
+                                    fileObj.id,
+                                    fileObj.mediaUrl
+                                );
 
-                                            // CRITICAL FIX: Add comment to the same folder as the image
-                                            if (fileObj.folder) {
-                                                zip.folder(fileObj.folder).file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
-                                            } else {
-                                                zip.file(textFilename, new Blob([commentText], { type: 'text/plain;charset=utf-8' }));
-                                            }
-                                            console.log(`✓ Added comment for ${filename} in folder ${fileObj.folder || 'root'}`);
-                                        }
+                                if (commentText) {
+                                    // filename_comments.txt
+                                    let textFilename = filename.replace(/\.[^.]+$/, '') + '_comments.txt';
+
+                                    if (fileObj.folder) {
+                                        zip.folder(fileObj.folder).file(
+                                            textFilename,
+                                            new Blob([commentText], {
+                                                type: 'text/plain;charset=utf-8'
+                                            })
+                                        );
+                                    } else {
+                                        zip.file(
+                                            textFilename,
+                                            new Blob([commentText], {
+                                                type: 'text/plain;charset=utf-8'
+                                            })
+                                        );
                                     }
+
+                                    console.log(
+                                        `✓ Added comments for ${filename} (${fileObj.mediaUrl})`
+                                    );
+                                } else {
+                                    console.log(
+                                        `ℹ No comments found for ${filename}`
+                                    );
                                 }
                             } catch (err) {
-                                console.log('No comments found or error for ID:', fileObj.id, err);
+                                console.warn(
+                                    'Comment fetch error:',
+                                    fileObj.mediaUrl,
+                                    err
+                                );
                             }
                         }
+
                     }
 
                     // Add image/file to ZIP (already handles folders)
