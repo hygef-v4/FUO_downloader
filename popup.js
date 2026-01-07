@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         fileList.push(...threadFiles);
 
                         // Increased delay to avoid rate limiting and ensure all async operations complete
-                        await new Promise(r => setTimeout(r, 500));
+                        await new Promise(r => setTimeout(r, 100));
 
                     } catch (err) {
                         console.error('Error scanning thread:', thread.url, err);
