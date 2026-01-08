@@ -1,13 +1,13 @@
 let fileList = [];
 let currentTitle = 'downloaded-files';
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const scanBtn = document.getElementById('scanBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const statusDiv = document.getElementById('status');
     const fileListDiv = document.getElementById('imageList');
 
-    scanBtn.addEventListener('click', async function() {
+    scanBtn.addEventListener('click', async function () {
         showStatus('Scanning for files...', 'info');
         scanBtn.disabled = true;
         downloadBtn.disabled = true;
@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         fileList.push(...threadFiles);
 
                         // Increased delay to avoid rate limiting and ensure all async operations complete
-                        await new Promise(r => setTimeout(r, 100));
+                        await new Promise(r => setTimeout(r, 500));
 
                     } catch (err) {
                         console.error('Error scanning thread:', thread.url, err);
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    downloadBtn.addEventListener('click', async function() {
+    downloadBtn.addEventListener('click', async function () {
         let folderName = currentTitle.trim() || 'downloaded-files';
 
         // Sanitize filename again to be safe
