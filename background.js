@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Click on extension icon: toggle floating UI on the current tab
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener(async(tab) => {
     if (!tab || !tab.id) return;
 
     try {

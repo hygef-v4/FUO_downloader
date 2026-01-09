@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Fuo File Downloader</title>
-        <style>
-            :root {
+    <style>
+         :root {
             --primary: #4f46e5;
             --primary-hover: #4338ca;
             --bg: #ffffff;
@@ -32,7 +32,7 @@
             position: relative;
             overflow: hidden;
         }
-
+        
         .launcher {
             position: fixed;
             bottom: 16px;
@@ -42,7 +42,7 @@
             align-items: center;
             z-index: 2;
         }
-
+        
         .fab {
             width: 64px;
             height: 64px;
@@ -55,16 +55,16 @@
             box-shadow: 0 10px 25px rgba(79, 70, 229, 0.25);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-
+        
         .fab:hover {
             transform: translateY(-2px);
             box-shadow: 0 14px 28px rgba(79, 70, 229, 0.3);
         }
-
+        
         .fab:active {
             transform: translateY(0);
         }
-
+        
         .panel {
             position: relative;
             margin-top: 84px;
@@ -74,17 +74,17 @@
             transform: translateY(-8px) scale(0.98);
             pointer-events: none;
         }
-
+        
         .panel.open {
             opacity: 1;
             transform: translateY(0) scale(1);
             pointer-events: auto;
         }
-
+        
         .embedded .launcher {
             display: none;
         }
-
+        
         .embedded .panel {
             margin-top: 0;
             opacity: 1;

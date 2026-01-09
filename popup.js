@@ -1,7 +1,7 @@
 let fileList = [];
 let currentTitle = 'downloaded-files';
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
     const launcherBtn = document.getElementById('launcherBtn');
     const panel = document.getElementById('panel');
     const scanBtn = document.getElementById('scanBtn');
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', function () {
         launcherBtn.setAttribute('aria-expanded', isOpen.toString());
     });
 
-    scanBtn.addEventListener('click', async function () {
+    scanBtn.addEventListener('click', async function() {
         showStatus('Scanning for files...', 'info');
         scanBtn.disabled = true;
         downloadBtn.disabled = true;
@@ -30,6 +30,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+            // Extension is intended to run only on fuoverflow.com
+            const tabUrl = tab && tab.url ? tab.url : '';
+            let hostname = '';
+            try {
+                hostname = tabUrl ? new URL(tabUrl).hostname : '';
+            } catch {
+                hostname = '';
+            }
+
+            if (hostname !== 'fuoverflow.com') {
+                showStatus('This extension only works on https://fuoverflow.com/', 'error');
+                scanBtn.disabled = false;
+                downloadBtn.disabled = true;
+                return;
+            }
 
             // Get page title and extract files
             const results = await chrome.scripting.executeScript({
@@ -180,7 +196,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    downloadBtn.addEventListener('click', async function () {
+    downloadBtn.addEventListener('click', async function() {
         let folderName = currentTitle.trim() || 'downloaded-files';
 
         // Sanitize filename again to be safe

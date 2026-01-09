@@ -4,15 +4,14 @@
     "version": "1.1",
     "description": "Download all attachments from fuoverflow.com as a ZIP file",
     "permissions": [
-        "activeTab",
         "tabs",
         "downloads",
         "storage",
         "scripting"
     ],
     "host_permissions": [
-        "https://*/*",
-        "http://*/*"
+        "https://fuoverflow.com/*",
+        "http://fuoverflow.com/*"
     ],
     "action": {
         "default_icon": {
@@ -24,34 +23,30 @@
     "background": {
         "service_worker": "background.js"
     },
-    "content_scripts": [
-        {
-            "matches": [
-                "http://*/*",
-                "https://*/*"
-            ],
-            "js": [
-                "content.js"
-            ],
-            "run_at": "document_idle"
-        }
-    ],
-    "web_accessible_resources": [
-        {
-            "resources": [
-                "popup.html",
-                "popup.js",
-                "jszip.min.js",
-                "icon16.png",
-                "icon48.png",
-                "icon128.png"
-            ],
-            "matches": [
-                "http://*/*",
-                "https://*/*"
-            ]
-        }
-    ],
+    "content_scripts": [{
+        "matches": [
+            "http://fuoverflow.com/*",
+            "https://fuoverflow.com/*"
+        ],
+        "js": [
+            "content.js"
+        ],
+        "run_at": "document_idle"
+    }],
+    "web_accessible_resources": [{
+        "resources": [
+            "popup.html",
+            "popup.js",
+            "jszip.min.js",
+            "icon16.png",
+            "icon48.png",
+            "icon128.png"
+        ],
+        "matches": [
+            "http://fuoverflow.com/*",
+            "https://fuoverflow.com/*"
+        ]
+    }],
     "icons": {
         "16": "icon16.png",
         "48": "icon48.png",

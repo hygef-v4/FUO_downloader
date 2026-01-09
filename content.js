@@ -1,20 +1,20 @@
 (() => {
-  const ROOT_ID = 'fuo-downloader-floating-root';
+    const ROOT_ID = 'fuo-downloader-floating-root';
 
-  if (document.getElementById(ROOT_ID)) return;
+    if (document.getElementById(ROOT_ID)) return;
 
-  const rootHost = document.createElement('div');
-  rootHost.id = ROOT_ID;
-  rootHost.style.all = 'initial';
-  rootHost.style.position = 'fixed';
-  rootHost.style.right = '16px';
-  rootHost.style.bottom = '16px';
-  rootHost.style.zIndex = '2147483647';
+    const rootHost = document.createElement('div');
+    rootHost.id = ROOT_ID;
+    rootHost.style.all = 'initial';
+    rootHost.style.position = 'fixed';
+    rootHost.style.right = '16px';
+    rootHost.style.bottom = '16px';
+    rootHost.style.zIndex = '2147483647';
 
-  const shadow = rootHost.attachShadow({ mode: 'open' });
+    const shadow = rootHost.attachShadow({ mode: 'open' });
 
-  const style = document.createElement('style');
-  style.textContent = `
+    const style = document.createElement('style');
+    style.textContent = `
     :host { all: initial; }
 
     .wrap {
@@ -72,40 +72,40 @@
     }
   `;
 
-  const wrap = document.createElement('div');
-  wrap.className = 'wrap';
+    const wrap = document.createElement('div');
+    wrap.className = 'wrap';
 
-  const button = document.createElement('button');
-  button.className = 'fab';
-  button.type = 'button';
-  button.setAttribute('aria-label', 'Open FUO Downloader');
-  button.setAttribute('aria-expanded', 'false');
-  button.textContent = '⬇️';
+    const button = document.createElement('button');
+    button.className = 'fab';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Open FUO Downloader');
+    button.setAttribute('aria-expanded', 'false');
+    button.textContent = '⬇️';
 
-  const panel = document.createElement('div');
-  panel.className = 'panel';
+    const panel = document.createElement('div');
+    panel.className = 'panel';
 
-  const iframe = document.createElement('iframe');
-  iframe.src = chrome.runtime.getURL('popup.html?embedded=1');
-  iframe.setAttribute('title', 'FUO Downloader');
+    const iframe = document.createElement('iframe');
+    iframe.src = chrome.runtime.getURL('popup.html?embedded=1');
+    iframe.setAttribute('title', 'FUO Downloader');
 
-  panel.appendChild(iframe);
-  wrap.appendChild(panel);
-  wrap.appendChild(button);
+    panel.appendChild(iframe);
+    wrap.appendChild(panel);
+    wrap.appendChild(button);
 
-  shadow.appendChild(style);
-  shadow.appendChild(wrap);
+    shadow.appendChild(style);
+    shadow.appendChild(wrap);
 
-  button.addEventListener('click', () => {
-    const isOpen = panel.classList.toggle('open');
-    button.setAttribute('aria-expanded', String(isOpen));
-  });
+    button.addEventListener('click', () => {
+        const isOpen = panel.classList.toggle('open');
+        button.setAttribute('aria-expanded', String(isOpen));
+    });
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.action === 'toggleFloatingUI') {
-      button.click();
-    }
-  });
+    chrome.runtime.onMessage.addListener((msg) => {
+        if (msg && msg.action === 'toggleFloatingUI') {
+            button.click();
+        }
+    });
 
-  document.documentElement.appendChild(rootHost);
+    document.documentElement.appendChild(rootHost);
 })();
