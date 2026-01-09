@@ -2,10 +2,24 @@ let fileList = [];
 let currentTitle = 'downloaded-files';
 
 document.addEventListener('DOMContentLoaded', function () {
+    const launcherBtn = document.getElementById('launcherBtn');
+    const panel = document.getElementById('panel');
     const scanBtn = document.getElementById('scanBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const statusDiv = document.getElementById('status');
     const fileListDiv = document.getElementById('imageList');
+
+    const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1';
+    if (isEmbedded) {
+        document.body.classList.add('embedded');
+        panel.classList.add('open');
+        launcherBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    launcherBtn.addEventListener('click', () => {
+        const isOpen = panel.classList.toggle('open');
+        launcherBtn.setAttribute('aria-expanded', isOpen.toString());
+    });
 
     scanBtn.addEventListener('click', async function () {
         showStatus('Scanning for files...', 'info');

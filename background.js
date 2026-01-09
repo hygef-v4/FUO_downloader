@@ -20,6 +20,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
+// Click on extension icon: toggle floating UI on the current tab
+chrome.action.onClicked.addListener(async (tab) => {
+    if (!tab || !tab.id) return;
+
+    try {
+        await chrome.tabs.sendMessage(tab.id, { action: 'toggleFloatingUI' });
+    } catch (e) {
+        // Ignore: content scripts don't run on chrome://, edge://, or restricted pages
+        console.warn('Unable to toggle floating UI on this page.', e);
+    }
+});
+
 // Optional: Listen for download completion
 chrome.downloads.onChanged.addListener((delta) => {
     if (delta.state && delta.state.current === 'complete') {
